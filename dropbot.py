@@ -110,7 +110,7 @@ class DropstabClient:
             return None
     
     def ghalibie(self):
-        json_data = {"code": "7YU8Z"}
+        json_data = {"code": "GLHH8"}
         try:
             return self._make_authenticated_request("PUT", "/api/user/applyRefLink", json_data)
         except requests.RequestException as e:
@@ -172,7 +172,7 @@ class DropstabClient:
             return 'FAILED'
 
     def claim_task(self, task_id):
-        max_retries = 3
+        max_retries = 15
         retry_delay = 2  # seconds
         
         for attempt in range(max_retries):

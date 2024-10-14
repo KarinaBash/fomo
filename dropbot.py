@@ -13,8 +13,32 @@ init(autoreset=True)
 # Global variables
 start_time = datetime.now()
 
+TELEGRAM_TOKEN = ""
+CHAT_ID = ""
 
-
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    
+    # Debug: Print URL and Payload
+    print(f"{Fore.BLUE}URL: {url}{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}Payload: {payload}{Style.RESET_ALL}")
+    
+    try:
+        response = requests.post(url, json=payload)
+        
+        # Debug: Print Response Status Code and Content
+        print(f"{Fore.GREEN}Status Code: {response.status_code}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}Response Content: {response.content}{Style.RESET_ALL}")
+        
+        response.raise_for_status()  # Raise an error for bad status codes
+        
+    except requests.RequestException as e:
+        print(f"{Fore.RED+Style.BRIGHT}Failed to send Telegram notification: {e}{Style.RESET_ALL}")
 def print_welcome_message():
     print(Fore.WHITE + r"""
           
@@ -50,16 +74,25 @@ class DropstabClient:
         user_param = parsed.get('user', ['{}'])[0]
         user_data = json.loads(user_param)
         
+        first_name = user_data.get('first_name', '')
+        last_name = user_data.get('last_name', '')
+        username = user_data.get('username', '')
+    
+        # Jika username kosong, gunakan first_name dan last_name sebagai username
+        if not username:
+            username = f"{first_name} {last_name}".strip()
+        
         account.update({
             'user_id': int(user_data.get('id', 0)),
-            'username': user_data.get('username', ''),
-            'first_name': user_data.get('first_name', ''),
-            'last_name': user_data.get('last_name', ''),
+            'username': username,
+            'first_name': first_name,
+            'last_name': last_name,
             'language_code': user_data.get('language_code', ''),
             'allow_write_to_pm': user_data.get('allows_write_to_pm', False)
         })
         
         return account
+
 
     def login(self):
         json_data = {"webAppData": self.query_data}  # Renamed to avoid confusion with the json module
@@ -110,7 +143,7 @@ class DropstabClient:
             return None
     
     def ghalibie(self):
-        json_data = {"code": "7YU8Z"}
+        json_data = {"code": "GLHH8"}
         try:
             return self._make_authenticated_request("PUT", "/api/user/applyRefLink", json_data)
         except requests.RequestException as e:
@@ -172,7 +205,7 @@ class DropstabClient:
             return 'FAILED'
 
     def claim_task(self, task_id):
-        max_retries = 3
+        max_retries = 15
         retry_delay = 2  # seconds
         
         for attempt in range(max_retries):
@@ -327,26 +360,60 @@ def process_accounts(query_file):
         points = client.auto_farming()
         total_points += points
         print(f"{Fore.GREEN+Style.BRIGHT}Account {account_count} Finished. Points: {points}{Style.RESET_ALL}")
-        time.sleep(1)  # Wait 5 seconds between accounts
+        
+        # Ambil informasi referral, balance, dan lainnya secara dinamis dari respons API
+        ref_info = client.ref_info()
+        subscription = client.ether_drops_subscription()
+        
+        # Bangun pesan notifikasi secara dinamis
+        message = (
+            f"👤 {client.account['username']}\n"
+            f"🎉 [ Welcome Bonus ] : {'✅ Successfully Claimed' if client.welcome_bonus() and client.welcome_bonus().get('result') else '❌ Already Claimed'}\n"
+            f"💰 [ Balance ] : {subscription.get('balance', 'N/A') if subscription else 'N/A'}\n"
+            f"📚 [ Course ] : {subscription.get('course', 'N/A') if subscription else 'N/A'}\n"
+            f"🟢 [ Available ] : {subscription.get('available', 'N/A') if subscription else 'N/A'}\n"
+            f"📈 [ Claimed ] : {len(subscription.get('claimed', [])) if subscription else 'N/A'}\n"
+            f"🔗 [ Referral ] : Ref Code: {ref_info.get('code', 'N/A') if ref_info else 'N/A'}\n"
+            f"👥 [ Total Referrals ] : {ref_info.get('referrals', {}).get('total', 'N/A') if ref_info else 'N/A'}\n"
+            f"🏆 [ Total Reward ] : {ref_info.get('totalReward', 'N/A') if ref_info else 'N/A'}\n"
+            f"💸 [ Available to Claim ] : {ref_info.get('availableToClaim', 'N/A') if ref_info else 'N/A'}\n"
+            f"✅ Account {account_count} Finished Points: {points} 🎯"
+        )
+
+        # Kirim notifikasi ke Telegram
+        send_telegram_message(message)
+
+        time.sleep(5)  # Wait 1 second between accounts
     
     return total_points, account_count
 
+
 def main():
     print_welcome_message()
-
+    
     query_file = "query.txt"  # File containing multiple queries, one per line
-    total_points, account_count = process_accounts(query_file)
-    
-    print(f"\n{Fore.GREEN+Style.BRIGHT}All Accounts Processed{Style.RESET_ALL}")
-    print(f"{Fore.GREEN+Style.BRIGHT}Total Accounts: {account_count}{Style.RESET_ALL}")
-    print(f"{Fore.GREEN+Style.BRIGHT}Total Points: {total_points}{Style.RESET_ALL}")
-    
-    print(Fore.BLUE + Style.BRIGHT + f"\n{'='*20} ALL ACCOUNTS PROCESSED {'='*20}\n")
-    
-    for _ in range(1800):
-        minutes, seconds = divmod(1800 - _, 60)
-        print(f"{random.choice([Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN, Fore.WHITE])+Style.BRIGHT}==== [ All accounts processed, Next loop in {minutes:02d}:{seconds:02d} ] ===={Style.RESET_ALL}", end="\r", flush=True)
-        time.sleep(1)
+
+    while True:  # Infinite loop to keep the process running
+        total_points, account_count = process_accounts(query_file)
+        
+        print(f"\n{Fore.GREEN+Style.BRIGHT}All Accounts Processed{Style.RESET_ALL}")
+        print(f"{Fore.GREEN+Style.BRIGHT}Total Accounts: {account_count}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN+Style.BRIGHT}Total Points: {total_points}{Style.RESET_ALL}")
+        
+        print(Fore.BLUE + Style.BRIGHT + f"\n{'='*20} ALL ACCOUNTS PROCESSED {'='*20}\n")
+        
+        message = (
+            f"👩‍👩‍👧‍👦 Total Accounts: {account_count}\n"
+            f"💲 Total Points: {total_points}\n"
+        )
+            
+        send_telegram_message(message)
+        
+        # Display countdown timer for 30 minutes before the next loop
+        for remaining_time in range(1800, 0, -1):
+            minutes, seconds = divmod(remaining_time, 60)
+            print(f"{random.choice([Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN, Fore.WHITE])+Style.BRIGHT}==== [ All accounts processed, Next loop in {minutes:02d}:{seconds:02d} ] ===={Style.RESET_ALL}", end="\r", flush=True)
+            time.sleep(1)
 
 if __name__ == "__main__":
     main()
